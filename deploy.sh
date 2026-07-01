@@ -3,9 +3,9 @@
 # gasolineras — deploy / update on the server.
 #
 # Pulls the latest image published by CI to GHCR and (re)starts the stack with
-# docker compose. Defaults to docker-compose.shared.yml (the app behind the
-# existing shared Caddy). Override the compose file with
-# GASOLINERAS_COMPOSE=docker-compose.yml for the self-contained stack.
+# docker compose. Defaults to docker-compose.yml (the app behind the existing
+# shared Caddy). Override the compose file with
+# GASOLINERAS_COMPOSE=docker-compose.standalone.yml for the self-contained stack.
 #
 # Usage:  ./deploy.sh
 
@@ -21,7 +21,7 @@ if [ -f .env ]; then
   set +a
 fi
 
-COMPOSE_FILE="${GASOLINERAS_COMPOSE:-docker-compose.shared.yml}"
+COMPOSE_FILE="${GASOLINERAS_COMPOSE:-docker-compose.yml}"
 
 echo "==> Updating repo (compose files, Caddyfile, scripts)"
 git pull --ff-only || echo "   (git pull skipped/failed; continuing with local files)"

@@ -1,9 +1,18 @@
-# gasolineras — self-contained stack (app + Caddy with auto TLS).
-# Use this if you DON'T have a shared Caddy already on the server.
-# Needs ports 80 and 443 free on the host.
+# gasolineras — app ONLY, behind your EXISTING Caddy (the one already serving
+# other apps on ojoalprecio.com). No second Caddy here: the shared Caddy
+# reverse-proxies to this container by name over a shared Docker network.
 #
-# cp .env.example .env   # set GASOLINERAS_HOST
-# docker compose up -d
+# Setup:
+#   1) Find the Docker network your Caddy is on:
+#        docker inspect <caddy-container> \
+#          --format '{{json .NetworkSettings.Networks}}'
+#   2) Put that network name in .env as PROXY_NETWORK
+#   3) docker compose up -d
+#   4) Add to your Caddyfile:
+#        gasolineras.ojoalprecio.com {
+#            reverse_proxy gasolineras:80
+#        }
+#      Then: docker exec <caddy-container> caddy reload --config /etc/caddy/Caddyfile
 
 services:
   gasolineras:
@@ -11,23 +20,12 @@ services:
     restart: unless-stopped
     expose:
       - "80"
+    networks:
+      proxy:
+        aliases:
+          - gasolineras
 
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    environment:
-      GASOLINERAS_HOST: ${GASOLINERAS_HOST:-gasolineras.ojoalprecio.com}
-    depends_on:
-      - gasolineras
-
-volumes:
-  caddy_data:
-  caddy_config:
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:?set PROXY_NETWORK in .env to your existing Caddy network}

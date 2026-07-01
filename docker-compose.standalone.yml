@@ -1,0 +1,33 @@
+# gasolineras — self-contained stack (app + Caddy with auto TLS).
+# Use this if you DON'T have a shared Caddy already on the server.
+# Needs ports 80 and 443 free on the host.
+#
+# cp .env.example .env   # set GASOLINERAS_HOST
+# docker compose -f docker-compose.standalone.yml up -d
+
+services:
+  gasolineras:
+    image: ghcr.io/davic80/gasolineras:${GASOLINERAS_TAG:-latest}
+    restart: unless-stopped
+    expose:
+      - "80"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      GASOLINERAS_HOST: ${GASOLINERAS_HOST:-gasolineras.ojoalprecio.com}
+    depends_on:
+      - gasolineras
+
+volumes:
+  caddy_data:
+  caddy_config:
