@@ -1,0 +1,5 @@
+# Reverse proxy for gasolineras. The hostname comes from GASOLINERAS_HOST in .env.
+# Caddy obtains and renews the TLS certificate automatically (Let's Encrypt).
+{$GASOLINERAS_HOST} {
+	reverse_proxy gasolineras:80
+}

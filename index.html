@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Gasolineras España</title>
+
+  <!-- PWA / Add to Home Screen -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Gasolineras">
+  <meta name="theme-color" content="#007aff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1c1c1e"  media="(prefers-color-scheme: dark)">
+  <link rel="apple-touch-icon" href="icon.svg">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root {
+      --bg:        #f2f2f7;
+      --card:      #ffffff;
+      --text:      #1c1c1e;
+      --text2:     #6e6e73;
+      --accent:    #007aff;
+      --green:     #34c759;
+      --orange:    #ff9500;
+      --red:       #ff3b30;
+      --border:    #e5e5ea;
+      --input-bg:  #efeff4;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:       #1c1c1e;
+        --card:     #2c2c2e;
+        --text:     #f2f2f7;
+        --text2:    #8e8e93;
+        --border:   #3a3a3c;
+        --input-bg: #3a3a3c;
+      }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%; height: 100dvh;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      overscroll-behavior: none;
+    }
+    body { display: flex; flex-direction: column; }
+
+    /* Remove 300ms tap delay everywhere */
+    button, a, input, [onclick] { touch-action: manipulation; }
+
+    /* ── Header ── */
+    #hdr {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 14px 0;
+      padding-top: max(10px, env(safe-area-inset-top));
+      padding-left:  max(14px, env(safe-area-inset-left));
+      padding-right: max(14px, env(safe-area-inset-right));
+      flex-shrink: 0;
+      z-index: 30;
+    }
+    .hdr-row { display: flex; align-items: baseline; gap: 7px; }
+    h1 { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
+    .hdr-src { font-size: 11px; color: var(--text2); }
+    .fuel-tabs {
+      display: flex; gap: 6px;
+      margin-top: 8px; padding-bottom: 10px;
+      overflow-x: auto; scrollbar-width: none;
+    }
+    .fuel-tabs::-webkit-scrollbar { display: none; }
+    .fuel-tab {
+      padding: 6px 14px; border-radius: 20px;
+      border: 1.5px solid var(--border); background: transparent; color: var(--text);
+      font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap;
+      min-height: 34px; display: inline-flex; align-items: center;
+      transition: background .12s, border-color .12s, color .12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .fuel-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    /* ── Search bar ── */
+    #srch {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 9px 14px;
+      padding-left:  max(14px, env(safe-area-inset-left));
+      padding-right: max(14px, env(safe-area-inset-right));
+      flex-shrink: 0;
+      z-index: 25;
+      position: relative;
+    }
+    .srch-row { display: flex; gap: 8px; align-items: center; }
+    .srch-input-wrap {
+      flex: 1; display: flex; align-items: center;
+      background: var(--input-bg); border-radius: 12px;
+      padding: 0 8px; gap: 6px;
+    }
+    .srch-ico { font-size: 14px; flex-shrink: 0; }
+    #q {
+      flex: 1; border: none; background: transparent;
+      font-size: 16px; color: var(--text); padding: 9px 0; outline: none;
+    }
+    #q::placeholder { color: var(--text2); }
+    #clrBtn {
+      background: none; border: none; cursor: pointer;
+      color: var(--text2); font-size: 15px; padding: 8px 6px;
+      display: none; line-height: 1; min-width: 36px; text-align: center;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #clrBtn.vis { display: block; }
+
+    .gps-btn {
+      width: 44px; height: 44px; flex-shrink: 0;
+      background: var(--accent); border: none; border-radius: 12px;
+      color: #fff; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: opacity .12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .gps-btn:active { opacity: .7; }
+    .gps-btn.loading { opacity: .5; pointer-events: none; }
+
+    /* ── Autocomplete dropdown ── */
+    #drop {
+      position: absolute; left: 14px; right: 14px; top: calc(100% + 1px);
+      background: var(--card); border-radius: 14px;
+      box-shadow: 0 6px 28px rgba(0,0,0,.15);
+      z-index: 100; display: none; overflow: hidden;
+    }
+    #drop.open { display: block; }
+    .drop-item {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 11px 14px; cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .drop-item:last-child { border-bottom: none; }
+    .drop-item:hover, .drop-item.hi { background: var(--input-bg); }
+    .drop-ico  { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .drop-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .drop-sub  { font-size: 12px; color: var(--text2); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── Map ── */
+    #map { height: clamp(180px, 38vh, 360px); flex-shrink: 0; z-index: 1; }
+
+    /* Landscape on phones: tighter chrome, map stays useful */
+    @media (orientation: landscape) and (max-height: 500px) {
+      #hdr { padding-bottom: 0; }
+      .fuel-tabs { margin-top: 4px; padding-bottom: 6px; }
+      #filter-bar, #radius-bar { padding-top: 5px; padding-bottom: 5px; }
+      #map { height: 55dvh; }
+    }
+
+    /* Location dot animation */
+    @keyframes pulse {
+      0%   { box-shadow: 0 0 0 0   rgba(0,122,255,.55); }
+      70%  { box-shadow: 0 0 0 12px rgba(0,122,255,0);  }
+      100% { box-shadow: 0 0 0 0   rgba(0,122,255,0);   }
+    }
+    .loc-dot {
+      width: 16px; height: 16px;
+      background: #007aff; border: 2.5px solid white; border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    /* Leaflet popup override */
+    .leaflet-popup-content-wrapper {
+      border-radius: 14px !important;
+      box-shadow: 0 4px 20px rgba(0,0,0,.14) !important;
+    }
+    .leaflet-popup-content { margin: 14px 16px !important; }
+    .leaflet-popup-tip-container { display: none; }
+    .leaflet-container a.leaflet-popup-close-button { display: none; }
+
+    /* ── List section ── */
+    #list {
+      flex: 1; overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 8px 14px 36px;
+      padding-left:   max(14px, env(safe-area-inset-left));
+      padding-right:  max(14px, env(safe-area-inset-right));
+      padding-bottom: max(36px, calc(env(safe-area-inset-bottom) + 16px));
+    }
+
+    /* Status */
+    #status { font-size: 13px; color: var(--text2); padding: 4px 0 8px; }
+
+    /* Hint */
+    .hint {
+      display: flex; flex-direction: column; align-items: center;
+      padding: 32px 0 16px; gap: 8px; text-align: center;
+    }
+    .hint-ico  { font-size: 36px; }
+    .hint-text { font-size: 14px; color: var(--text2); max-width: 220px; line-height: 1.45; }
+
+    /* Loading */
+    .ld-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text2); padding: 4px 0 8px; }
+    .spinner {
+      width: 14px; height: 14px; flex-shrink: 0;
+      border: 2px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin .5s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Error */
+    .err {
+      background: rgba(255,59,48,.08); border: 1px solid rgba(255,59,48,.22);
+      border-radius: 14px; padding: 14px;
+      font-size: 14px; color: var(--red); line-height: 1.5;
+    }
+    .retry-btn {
+      display: inline-block; margin-top: 10px; padding: 7px 14px;
+      background: var(--accent); color: #fff; border: none;
+      border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+
+    /* ── Filter bar ── */
+    #filter-bar {
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      padding: 7px 14px;
+      padding-left:  max(14px, env(safe-area-inset-left));
+      padding-right: max(14px, env(safe-area-inset-right));
+      display: flex; align-items: center; gap: 6px;
+      flex-shrink: 0; overflow-x: auto; scrollbar-width: none;
+    }
+    #filter-bar::-webkit-scrollbar { display: none; }
+    .f-chip {
+      display: flex; align-items: center; gap: 5px;
+      padding: 7px 14px; border-radius: 20px;
+      border: 1.5px solid var(--border); background: transparent; color: var(--text);
+      font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap;
+      min-height: 36px;
+      transition: background .12s, border-color .12s, color .12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .f-chip .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .f-chip.active                { background: var(--input-bg); border-color: var(--text2); }
+    .f-chip.active[data-cls=all]  { background: var(--text2);   border-color: var(--text2);  color:#fff; }
+    .f-chip.active[data-cls=cheap]  { background: var(--green);  border-color: var(--green);  color:#fff; }
+    .f-chip.active[data-cls=mid]    { background: var(--orange); border-color: var(--orange); color:#fff; }
+    .f-chip.active[data-cls=pricey] { background: var(--red);    border-color: var(--red);    color:#fff; }
+
+    /* ── Radius bar ── */
+    #radius-bar {
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      padding: 7px 14px 8px;
+      padding-left:  max(14px, env(safe-area-inset-left));
+      padding-right: max(14px, env(safe-area-inset-right));
+      display: flex; align-items: center; gap: 10px;
+      flex-shrink: 0; z-index: 5;
+    }
+    .radius-label { font-size: 12px; font-weight: 500; color: var(--text2); white-space: nowrap; flex-shrink: 0; }
+    .radius-val   { font-size: 13px; font-weight: 700; color: var(--accent); white-space: nowrap; flex-shrink: 0; min-width: 38px; text-align: right; }
+    #radiusSlider {
+      flex: 1; -webkit-appearance: none; appearance: none;
+      height: 4px; border-radius: 2px; outline: none; cursor: pointer;
+      background: linear-gradient(to right, var(--accent) 0%, var(--accent) 8%, var(--border) 8%);
+    }
+    #radiusSlider::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
+      background: var(--accent); box-shadow: 0 1px 5px rgba(0,122,255,.45); cursor: pointer;
+    }
+    #radiusSlider::-moz-range-thumb {
+      width: 20px; height: 20px; border-radius: 50%; border: none;
+      background: var(--accent); box-shadow: 0 1px 5px rgba(0,122,255,.45); cursor: pointer;
+    }
+
+    /* ── Sort control ── */
+    #list-header { display: flex; align-items: center; gap: 8px; padding: 4px 0 6px; }
+    #status { font-size: 13px; color: var(--text2); flex: 1; }
+    .sort-btn {
+      padding: 7px 12px; font-size: 13px; font-weight: 500;
+      border: 1.5px solid var(--border); background: transparent; color: var(--text2);
+      cursor: pointer; white-space: nowrap; min-height: 36px;
+      transition: background .12s, color .12s, border-color .12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .sort-btn:first-child { border-radius: 8px 0 0 8px; }
+    .sort-btn:last-child  { border-radius: 0 8px 8px 0; border-left: none; }
+    .sort-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    /* ── Station cards ── */
+    .card {
+      background: var(--card); border-radius: 16px;
+      padding: 13px 13px 11px; margin-bottom: 9px;
+      box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.04);
+      cursor: pointer;
+      transition: box-shadow .15s;
+    }
+    .card.hi { box-shadow: 0 0 0 2px var(--accent), 0 4px 16px rgba(0,122,255,.18); }
+    .card-top { display: flex; gap: 10px; align-items: flex-start; }
+    .card-info { flex: 1; min-width: 0; }
+    .c-name {
+      font-size: 15px; font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .c-addr {
+      font-size: 12px; color: var(--text2); margin-top: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .price {
+      background: var(--accent); color: #fff;
+      border-radius: 10px; padding: 5px 10px;
+      font-size: 15px; font-weight: 700;
+      white-space: nowrap; flex-shrink: 0; letter-spacing: -.2px;
+    }
+    .price.cheap   { background: var(--green);  }
+    .price.mid     { background: var(--orange); }
+    .price.pricey  { background: var(--red);    }
+    .price.noprice { background: var(--border); color: var(--text2); font-size: 12px; font-weight: 500; }
+    .card-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .badge { font-size: 12px; font-weight: 500; padding: 3px 8px; border-radius: 6px; }
+    .b-open    { background: rgba(52,199,89,.14);  color: var(--green);  }
+    .b-closed  { background: rgba(255,59,48,.11);  color: var(--red);    }
+    .b-unk     { background: var(--border);        color: var(--text2);  }
+    .b-dist    { background: var(--border);        color: var(--text2);  }
+    .c-sched   { font-size: 11px; color: var(--text2); margin-top: 4px; }
+    .c-extras  { font-size: 12px; color: var(--text2); margin-top: 4px; line-height: 1.5; }
+    .card-btns { display: flex; gap: 8px; margin-top: 10px; }
+    .nav-btn {
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+      padding: 8px 10px; border-radius: 10px; border: 1.5px solid var(--border);
+      background: transparent; color: var(--accent);
+      font-size: 13px; font-weight: 600; text-decoration: none;
+      -webkit-tap-highlight-color: transparent; transition: background .1s;
+    }
+    .nav-btn:active { background: var(--border); }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div id="hdr">
+  <div class="hdr-row">
+    <h1>⛽ Gasolineras</h1>
+    <span class="hdr-src">MINETUR · hoy</span>
+  </div>
+  <div class="fuel-tabs" id="fuelTabs"></div>
+</div>
+
+<!-- Search -->
+<div id="srch">
+  <div class="srch-row">
+    <div class="srch-input-wrap">
+      <span class="srch-ico">🔍</span>
+      <input id="q" type="text" placeholder="Buscar dirección o lugar…"
+             autocomplete="off" spellcheck="false" inputmode="search">
+      <button id="clrBtn" aria-label="Borrar">✕</button>
+    </div>
+    <button class="gps-btn" id="gpsBtn" aria-label="Usar mi ubicación" onclick="useGPS()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22"/>
+        <path d="M12 5a7 7 0 0 1 7 7 7 7 0 0 1-7 7 7 7 0 0 1-7-7 7 7 0 0 1 7-7z" stroke-opacity=".4"/>
+      </svg>
+    </button>
+  </div>
+  <div id="drop" role="listbox"></div>
+</div>
+
+<!-- Map -->
+<div id="map"></div>
+
+<!-- Filter by price color (multi-select) -->
+<div id="filter-bar">
+  <button class="f-chip active" data-cls="all"    onclick="toggleFilter('all')">Todas</button>
+  <button class="f-chip"        data-cls="cheap"  onclick="toggleFilter('cheap')"><span class="dot" style="background:var(--green)"></span>Baratas</button>
+  <button class="f-chip"        data-cls="mid"    onclick="toggleFilter('mid')"><span class="dot" style="background:var(--orange)"></span>Medias</button>
+  <button class="f-chip"        data-cls="pricey" onclick="toggleFilter('pricey')"><span class="dot" style="background:var(--red)"></span>Caras</button>
+</div>
+
+<!-- Radius control -->
+<div id="radius-bar">
+  <span class="radius-label">Radio</span>
+  <input id="radiusSlider" type="range" min="1" max="200" value="5" step="1" aria-label="Radio de búsqueda">
+  <span class="radius-val" id="radiusVal">5 km</span>
+</div>
+
+<!-- Station list -->
+<div id="list">
+  <div id="list-header">
+    <div id="status"></div>
+    <div>
+      <button class="sort-btn active" data-sort="dist"  onclick="setSort('dist')">Distancia</button>
+      <button class="sort-btn"        data-sort="price" onclick="setSort('price')">Precio</button>
+    </div>
+  </div>
+  <div id="cards">
+    <div class="hint">
+      <div class="hint-ico">📍</div>
+      <div class="hint-text">Busca una dirección, haz clic en el mapa o usa el GPS</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+
+const FUELS = [
+  { key: 'Precio Gasolina 95 E5',              label: 'Gasolina 95'    },
+  { key: 'Precio Gasoleo A',                   label: 'Diésel'         },
+  { key: 'Precio Gasoleo Premium',             label: 'Diésel Premium' },
+  { key: 'Precio Gasolina 98 E5',              label: 'Gasolina 98'    },
+  { key: 'Precio Gases licuados del petróleo', label: 'GLP'            },
+];
+
+
+const MINETUR   = 'https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes';
+const NOMINATIM = 'https://nominatim.openstreetmap.org';
+const MAX_SHOW  = 20;
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
+let map, locMarker, radiusCircle, renderer;
+let colorGroups  = {};          // { cheap, mid, pricey, noprice } → LayerGroup
+let selFuel      = FUELS[0].key;
+let curLat       = null, curLon = null;
+let radius       = 5;           // km
+let rawStations  = [];
+let taggedStations = [];        // stations in radius with _price/_pclass/_color/_marker/_card
+let colorFilter  = new Set();   // empty = all; else set of 'cheap'|'mid'|'pricey'
+let sortBy       = 'dist';      // 'dist' | 'price'
+let debTimer     = null;
+let dropResults  = [];
+let dropIdx      = -1;
+
+// ── Fuel tabs ─────────────────────────────────────────────────────────────────
+
+const tabsEl = document.getElementById('fuelTabs');
+FUELS.forEach(f => {
+  const b = document.createElement('button');
+  b.className = 'fuel-tab' + (f.key === selFuel ? ' active' : '');
+  b.textContent = f.label;
+  b.onclick = () => {
+    selFuel = f.key;
+    tabsEl.querySelectorAll('.fuel-tab').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    if (rawStations.length) renderAll(rawStations);
+  };
+  tabsEl.appendChild(b);
+});
+
+// ── Map init ──────────────────────────────────────────────────────────────────
+
+function initMap() {
+  map = L.map('map', { center: [40.4, -3.7], zoom: 6, zoomControl: false, attributionControl: false });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+  L.control.attribution({ prefix: false })
+    .addAttribution('© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://sedeaplicaciones.minetur.gob.es">MINETUR</a>')
+    .addTo(map);
+
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+  // Canvas renderer: handles thousands of markers without DOM overhead
+  renderer = L.canvas({ padding: 0.5 });
+
+  // One LayerGroup per price class — toggle visibility for filtering without re-rendering
+  colorGroups = {
+    cheap:   L.layerGroup().addTo(map),
+    mid:     L.layerGroup().addTo(map),
+    pricey:  L.layerGroup().addTo(map),
+    noprice: L.layerGroup().addTo(map),
+  };
+
+  map.on('click', e => setLocation(e.latlng.lat, e.latlng.lng, null));
+}
+
+// ── Location marker + radius circle ──────────────────────────────────────────
+
+function placeLocMarker(lat, lon) {
+  const icon = L.divIcon({ className: '', html: '<div class="loc-dot"></div>', iconSize: [16,16], iconAnchor: [8,8] });
+  if (!locMarker) {
+    locMarker = L.marker([lat, lon], { icon, zIndexOffset: 1000 }).addTo(map);
+  } else {
+    locMarker.setLatLng([lat, lon]);
+  }
+}
+
+function updateRadiusCircle(lat, lon) {
+  const r = radius * 1000; // metres
+  if (!radiusCircle) {
+    radiusCircle = L.circle([lat, lon], {
+      radius: r,
+      color: '#007aff', weight: 1.5, opacity: 0.45,
+      fillColor: '#007aff', fillOpacity: 0.07,
+      interactive: false,
+    }).addTo(map);
+  } else {
+    radiusCircle.setLatLng([lat, lon]);
+    radiusCircle.setRadius(r);
+  }
+}
+
+function syncSliderTrack() {
+  const sl = document.getElementById('radiusSlider');
+  const pct = ((sl.value - sl.min) / (sl.max - sl.min) * 100).toFixed(1);
+  sl.style.background = `linear-gradient(to right, var(--accent) 0%, var(--accent) ${pct}%, var(--border) ${pct}%)`;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+function parseNum(s) {
+  if (!s || !s.trim()) return null;
+  return parseFloat(s.replace(',', '.'));
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371, r = Math.PI / 180;
+  const dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*r)*Math.cos(lat2*r)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function fmtDist(km) { return km < 1 ? `${Math.round(km*1000)} m` : `${km.toFixed(1)} km`; }
+
+// Parse "L-D: 06:00-22:00; S: 09:00-14:00" → true/false/null
+function isOpen(h) {
+  if (!h || !h.trim()) return null;
+  h = h.trim().toUpperCase();
+  if (h === '24H' || h === 'L-D: 00:00-24:00') return true;
+
+  const now = new Date();
+  const jd  = now.getDay();
+  const cm  = now.getHours() * 60 + now.getMinutes();
+  const D2J = { L:1, M:2, X:3, J:4, V:5, S:6, D:0 };
+  const ORD = ['L','M','X','J','V','S','D'];
+
+  for (const seg of h.split(';')) {
+    const t = seg.trim();
+
+    // Handle "L-D: 24H" or "L-V: 24H" etc.
+    const m24 = t.match(/^([LMXJVSD])(?:-([LMXJVSD]))?\s*:\s*24H$/);
+    if (m24) {
+      const iS = ORD.indexOf(m24[1]), iE = m24[2] ? ORD.indexOf(m24[2]) : iS;
+      const days = [];
+      if (iS <= iE) for (let i=iS;i<=iE;i++) days.push(D2J[ORD[i]]);
+      else { for (let i=iS;i<7;i++) days.push(D2J[ORD[i]]); for (let i=0;i<=iE;i++) days.push(D2J[ORD[i]]); }
+      if (days.includes(jd)) return true;
+      continue;
+    }
+
+    const m = t.match(/^([LMXJVSD])(?:-([LMXJVSD]))?\s*:\s*(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/);
+    if (!m) continue;
+    const [, d1, d2, h1, m1, h2, m2] = m;
+    const open  = +h1*60 + +m1;
+    let   close = +h2*60 + +m2;
+    if (close === 0 || +h2 >= 24) close = 1440;
+    const iS = ORD.indexOf(d1), iE = d2 ? ORD.indexOf(d2) : iS;
+    const days = [];
+    if (iS <= iE) for (let i=iS;i<=iE;i++) days.push(D2J[ORD[i]]);
+    else { for (let i=iS;i<7;i++) days.push(D2J[ORD[i]]); for (let i=0;i<=iE;i++) days.push(D2J[ORD[i]]); }
+    if (days.includes(jd) && cm >= open && cm < close) return true;
+  }
+  return false;
+}
+
+// ── MINETUR fetch (España completa, cacheada en memoria) ─────────────────────
+
+let _spainCache   = null;
+let _spainPromise = null;
+
+async function getSpainStations() {
+  if (_spainCache) return _spainCache;
+  if (!_spainPromise) {
+    _spainPromise = fetch(`${MINETUR}/EstacionesTerrestres/`)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(d => {
+        _spainCache = (d.ListaEESSPrecio || [])
+          .map(s => {
+            const lat = parseNum(s['Latitud']), lon = parseNum(s['Longitud (WGS84)']);
+            return lat && lon ? { ...s, _lat: lat, _lon: lon } : null;
+          })
+          .filter(Boolean);
+        return _spainCache;
+      });
+  }
+  return _spainPromise;
+}
+
+// ── Main flow ─────────────────────────────────────────────────────────────────
+
+async function setLocation(lat, lon, label) {
+  curLat = lat; curLon = lon;
+  placeLocMarker(lat, lon);
+  updateRadiusCircle(lat, lon);
+  map.fitBounds(radiusCircle.getBounds(), { padding: [24, 24], animate: true });
+
+  if (!label) {
+    try {
+      const r = await fetch(`${NOMINATIM}/reverse?format=json&lat=${lat}&lon=${lon}`,
+        { headers: { 'Accept-Language': 'es' } });
+      const d = await r.json();
+      label = (d.display_name || '').split(',').slice(0,2).join(',').trim();
+    } catch (_) {
+      label = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    }
+  }
+  setQ(label);
+
+  if (!_spainCache) showLoading('Descargando gasolineras de España…');
+  try {
+    rawStations = await getSpainStations();
+    renderAll(rawStations);
+  } catch (e) {
+    showError(`No se pudieron cargar los datos: ${e.message}`);
+  }
+}
+
+function useGPS() {
+  const btn = document.getElementById('gpsBtn');
+  btn.classList.add('loading');
+  showLoading('Obteniendo ubicación GPS…');
+
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      btn.classList.remove('loading');
+      setLocation(pos.coords.latitude, pos.coords.longitude, null);
+    },
+    err => {
+      btn.classList.remove('loading');
+      showError(err.code === 1
+        ? 'Permiso de ubicación denegado. Actívalo en los ajustes del navegador.'
+        : 'No se pudo obtener la ubicación GPS.');
+    },
+    { enableHighAccuracy: true, timeout: 12000 }
+  );
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+
+function renderAll(raw) {
+  const all = raw
+    .map(s => ({ ...s, _dist: haversine(curLat, curLon, s._lat, s._lon) }))
+    .filter(s => s._dist <= radius)
+    .sort((a, b) => a._dist - b._dist);
+
+  const total    = all.length;
+  const enriched = all.slice(0, MAX_SHOW);
+
+  // Tercile thresholds for price color
+  const prices = enriched.map(s => parseNum(s[selFuel])).filter(Boolean).sort((a,b)=>a-b);
+  const lo = prices[Math.floor(prices.length * .33)] ?? 0;
+  const hi = prices[Math.floor(prices.length * .66)] ?? Infinity;
+
+  renderMarkers(enriched, lo, hi);
+  renderCards(enriched, lo, hi, total);
+}
+
+// 9 colors: intensity increases with price extremity
+// greens: darkest=cheapest→lightest=least-cheap
+// oranges: lightest=cheap-mid (near green)→darkest=dear-mid (near red)
+// reds: lightest=least-pricey→darkest=most expensive
+// suave = precio atractivo, oscuro = precio menos atractivo
+const LEVEL_COLORS = [
+  '#86d99b', '#34c759', '#006b21',   // cheap  q1(suave)→q3(intenso)
+  '#ffd080', '#ff9500', '#cc5500',   // mid    q4(suave)→q6(intenso)
+  '#ff8080', '#ff3b30', '#8b0000',   // pricey q7(suave)→q9(intenso)
+];
+const LEVEL_CLASS = [
+  'cheap','cheap','cheap',
+  'mid','mid','mid',
+  'pricey','pricey','pricey',
+];
+
+function getColorAndClass(price, thresholds) {
+  if (!price) return { pclass: 'noprice', color: '#8e8e93' };
+  for (let i = 0; i < 8; i++) {
+    if (price <= thresholds[i]) return { pclass: LEVEL_CLASS[i], color: LEVEL_COLORS[i] };
+  }
+  return { pclass: 'pricey', color: LEVEL_COLORS[8] };
+}
+
+// ── renderAll: tag all stations, draw all markers, filter cards ───────────────
+
+function renderAll(raw) {
+  const inRadius = raw
+    .map(s => ({ ...s, _dist: haversine(curLat, curLon, s._lat, s._lon) }))
+    .filter(s => s._dist <= radius)
+    .sort((a, b) => a._dist - b._dist);
+
+  // 8 quantile thresholds → 9 buckets
+  const prices = inRadius.map(s => parseNum(s[selFuel])).filter(Boolean).sort((a,b)=>a-b);
+  const n = prices.length;
+  const thresholds = n < 2
+    ? Array(8).fill(Infinity)
+    : [1,2,3,4,5,6,7,8].map(i => prices[Math.min(Math.floor(i/9*n), n-1)]);
+
+  // Tag each station once
+  taggedStations = inRadius.map(s => {
+    const price = parseNum(s[selFuel]);
+    const { pclass, color } = getColorAndClass(price, thresholds);
+    return { ...s, _price: price, _pclass: pclass, _color: color, _marker: null, _card: null };
+  });
+
+  renderMarkers(taggedStations);
+  renderCards(visibleStations());
+}
+
+function visibleStations() {
+  let list = colorFilter.size === 0
+    ? taggedStations
+    : taggedStations.filter(s => colorFilter.has(s._pclass));
+
+  if (sortBy === 'price') {
+    list = [...list].sort((a, b) => {
+      if (!a._price && !b._price) return a._dist - b._dist;
+      if (!a._price) return 1;
+      if (!b._price) return -1;
+      return a._price - b._price;
+    });
+  }
+  // 'dist': taggedStations is already sorted by distance from renderAll
+  return list;
+}
+
+function setSort(by) {
+  sortBy = by;
+  document.querySelectorAll('.sort-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.sort === by)
+  );
+  if (taggedStations.length) renderCards(visibleStations());
+}
+
+// ── renderMarkers: ALL stations in radius, grouped by price class ─────────────
+
+function renderMarkers(stations) {
+  Object.values(colorGroups).forEach(g => g.clearLayers());
+
+  stations.forEach(s => {
+    const mk = L.circleMarker([s._lat, s._lon], {
+      radius: 8, fillColor: s._color, color: '#fff',
+      weight: 1.5, fillOpacity: .92, renderer,
+    });
+
+    const gmaps = `https://www.google.com/maps/dir/?api=1&destination=${s._lat},${s._lon}`;
+    const amaps = `https://maps.apple.com/?daddr=${s._lat},${s._lon}&dirflg=d`;
+
+    mk.bindPopup(`
+      <div style="font-family:-apple-system,sans-serif;min-width:150px">
+        <div style="font-weight:700;font-size:14px;margin-bottom:3px">${s['Rótulo']||'Gasolinera'}</div>
+        <div style="font-size:12px;color:#6e6e73;margin-bottom:6px">${s['Dirección']}</div>
+        <div style="font-size:17px;font-weight:800;color:${s._color};margin-bottom:10px">
+          ${s._price ? s._price.toFixed(3)+' €' : 'Sin precio'}
+        </div>
+        <div style="display:flex;gap:6px">
+          <a href="${gmaps}" target="_blank"
+             style="flex:1;text-align:center;padding:6px 4px;border-radius:8px;background:#f2f2f7;
+                    text-decoration:none;font-size:12px;font-weight:600;color:#007aff">Google</a>
+          <a href="${amaps}" target="_blank"
+             style="flex:1;text-align:center;padding:6px 4px;border-radius:8px;background:#f2f2f7;
+                    text-decoration:none;font-size:12px;font-weight:600;color:#007aff">Apple</a>
+        </div>
+      </div>
+    `, { closeButton: false });
+
+    mk.on('click', () => {
+      document.querySelectorAll('.card.hi').forEach(c => c.classList.remove('hi'));
+      if (s._card) {
+        s._card.classList.add('hi');
+        s._card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+
+    s._marker = mk;
+    colorGroups[s._pclass].addLayer(mk);
+  });
+
+  applyColorFilter();
+}
+
+// ── renderCards: only visible (filtered) stations, capped at MAX_SHOW ─────────
+
+function renderCards(stations) {
+  const statusEl = document.getElementById('status');
+  const cardsEl  = document.getElementById('cards');
+
+  // Clear previous card references
+  taggedStations.forEach(s => s._card = null);
+  cardsEl.innerHTML = '';
+
+  const total    = taggedStations.length;
+  const visible  = stations.length;
+
+  if (!total) {
+    statusEl.textContent = '';
+    cardsEl.innerHTML = `
+      <div class="hint">
+        <div class="hint-ico">🔍</div>
+        <div class="hint-text">Sin gasolineras en ${radius} km — prueba a ampliar el radio</div>
+      </div>`;
+    return;
+  }
+
+  const displayed = stations.slice(0, MAX_SHOW);
+  const date = new Date().toLocaleDateString('es-ES', { day:'numeric', month:'short' });
+  const filterNote = colorFilter.size > 0 ? ` · filtradas: ${visible}` : '';
+  const capNote    = visible > MAX_SHOW ? ` (mostrando ${MAX_SHOW})` : '';
+  statusEl.textContent = `${total} gasolinera${total!==1?'s':''} en ${radius} km · ${date}${filterNote}${capNote}`;
+
+  const PIN = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>`;
+
+  displayed.forEach(s => {
+    const open   = isOpen(s['Horario']);
+    const extras = FUELS
+      .filter(f => f.key !== selFuel)
+      .map(f => { const p = parseNum(s[f.key]); return p ? `${f.label}: ${p.toFixed(3)} €` : null; })
+      .filter(Boolean).join(' · ');
+
+    const gmaps = `https://www.google.com/maps/dir/?api=1&destination=${s._lat},${s._lon}`;
+    const amaps = `https://maps.apple.com/?daddr=${s._lat},${s._lon}&dirflg=d`;
+
+    const openBadge = open === true
+      ? `<span class="badge b-open">Abierta</span>`
+      : open === false
+        ? `<span class="badge b-closed">Cerrada</span>`
+        : `<span class="badge b-unk">Horario no disponible</span>`;
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-top">
+        <div class="card-info">
+          <div class="c-name">${s['Rótulo'] || 'Gasolinera'}</div>
+          <div class="c-addr">${s['Dirección']}, ${s['Municipio']}</div>
+        </div>
+        <div class="price" style="${s._pclass==='noprice' ? '' : `background:${s._color}`}">${s._price ? s._price.toFixed(3)+' €' : 'Sin precio'}</div>
+      </div>
+      <div class="card-meta">
+        <span class="badge b-dist">${PIN} ${fmtDist(s._dist)}</span>
+        ${openBadge}
+      </div>
+      ${s['Horario'] ? `<div class="c-sched">${s['Horario']}</div>` : ''}
+      ${extras       ? `<div class="c-extras">${extras}</div>`       : ''}
+      <div class="card-btns">
+        <a class="nav-btn" href="${gmaps}" target="_blank" rel="noopener noreferrer"
+           onclick="event.stopPropagation()">${PIN} Google Maps</a>
+        <a class="nav-btn" href="${amaps}" target="_blank" rel="noopener noreferrer"
+           onclick="event.stopPropagation()">${PIN} Apple Maps</a>
+      </div>
+    `;
+
+    card.onclick = () => {
+      document.querySelectorAll('.card.hi').forEach(c => c.classList.remove('hi'));
+      card.classList.add('hi');
+      if (s._marker) {
+        map.setView([s._marker.getLatLng().lat, s._marker.getLatLng().lng],
+          Math.max(map.getZoom(), 15), { animate: true });
+        s._marker.openPopup();
+      }
+    };
+
+    s._card = card;
+    cardsEl.appendChild(card);
+  });
+}
+
+// ── Color filter ──────────────────────────────────────────────────────────────
+
+function toggleFilter(cls) {
+  if (cls === 'all') {
+    colorFilter.clear();
+  } else {
+    colorFilter.has(cls) ? colorFilter.delete(cls) : colorFilter.add(cls);
+  }
+
+  // Sync chip active states
+  document.querySelectorAll('.f-chip').forEach(chip => {
+    const c = chip.dataset.cls;
+    chip.classList.toggle('active',
+      c === 'all' ? colorFilter.size === 0 : colorFilter.has(c)
+    );
+  });
+
+  applyColorFilter();
+  renderCards(visibleStations());
+}
+
+function applyColorFilter() {
+  const all = colorFilter.size === 0;
+  Object.entries(colorGroups).forEach(([cls, group]) => {
+    const show = all || colorFilter.has(cls);
+    if (show && !map.hasLayer(group)) map.addLayer(group);
+    if (!show && map.hasLayer(group)) map.removeLayer(group);
+  });
+}
+
+// ── Search input ──────────────────────────────────────────────────────────────
+
+const qEl      = document.getElementById('q');
+const clrEl    = document.getElementById('clrBtn');
+const dropEl   = document.getElementById('drop');
+
+qEl.addEventListener('input', () => {
+  const v = qEl.value.trim();
+  clrEl.classList.toggle('vis', v.length > 0);
+  if (v.length < 3) { closeDrop(); return; }
+  clearTimeout(debTimer);
+  debTimer = setTimeout(() => searchAddr(v), 500);
+});
+
+qEl.addEventListener('keydown', e => {
+  const items = dropEl.querySelectorAll('.drop-item');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault(); dropIdx = Math.min(dropIdx+1, items.length-1); focusDrop(items);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault(); dropIdx = Math.max(dropIdx-1, -1); focusDrop(items);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (dropIdx >= 0 && dropResults[dropIdx]) pickResult(dropResults[dropIdx]);
+  } else if (e.key === 'Escape') {
+    closeDrop();
+  }
+});
+
+document.addEventListener('click', e => { if (!e.target.closest('#srch')) closeDrop(); });
+
+clrEl.addEventListener('click', () => {
+  qEl.value = ''; clrEl.classList.remove('vis');
+  closeDrop(); qEl.focus();
+});
+
+function focusDrop(items) {
+  items.forEach((el, i) => el.classList.toggle('hi', i === dropIdx));
+}
+
+async function searchAddr(q) {
+  try {
+    const r = await fetch(
+      `${NOMINATIM}/search?format=json&q=${encodeURIComponent(q)}&countrycodes=es&limit=5`,
+      { headers: { 'Accept-Language': 'es' } }
+    );
+    dropResults = await r.json();
+    dropIdx = -1;
+    renderDrop(dropResults);
+  } catch (_) { closeDrop(); }
+}
+
+const TYPE_ICONS = { road:'🛣️', city:'🏙️', town:'🏘️', village:'🏡', house:'🏠', fuel:'⛽' };
+
+function renderDrop(results) {
+  dropEl.innerHTML = '';
+  if (!results.length) { closeDrop(); return; }
+  results.forEach((res, i) => {
+    const parts  = res.display_name.split(',');
+    const name   = parts[0].trim();
+    const detail = parts.slice(1, 3).join(',').trim();
+    const icon   = TYPE_ICONS[res.type] || '📍';
+    const item   = document.createElement('div');
+    item.className = 'drop-item';
+    item.setAttribute('role', 'option');
+    item.innerHTML = `
+      <span class="drop-ico">${icon}</span>
+      <div>
+        <div class="drop-name">${name}</div>
+        <div class="drop-sub">${detail}</div>
+      </div>
+    `;
+    item.onclick = () => pickResult(res);
+    dropEl.appendChild(item);
+  });
+  dropEl.classList.add('open');
+}
+
+function pickResult(res) {
+  closeDrop();
+  const label = res.display_name.split(',').slice(0,2).join(',').trim();
+  setLocation(parseFloat(res.lat), parseFloat(res.lon), label);
+}
+
+function closeDrop() {
+  dropEl.classList.remove('open');
+  dropEl.innerHTML = '';
+  dropResults = []; dropIdx = -1;
+}
+
+function setQ(val) {
+  qEl.value = val;
+  clrEl.classList.toggle('vis', val.length > 0);
+}
+
+// ── Status helpers ────────────────────────────────────────────────────────────
+
+function showLoading(msg) {
+  document.getElementById('status').innerHTML =
+    `<div class="ld-row"><div class="spinner"></div><span>${msg}</span></div>`;
+  document.getElementById('cards').innerHTML = '';
+}
+
+function showError(msg) {
+  document.getElementById('status').innerHTML = '';
+  document.getElementById('cards').innerHTML = `
+    <div class="err">
+      ${msg}
+      <br><button class="retry-btn"
+        onclick="curLat && setLocation(curLat, curLon, document.getElementById('q').value)">
+        Reintentar
+      </button>
+    </div>`;
+}
+
+// ── Radius slider ─────────────────────────────────────────────────────────────
+
+const sliderEl   = document.getElementById('radiusSlider');
+const radiusValEl = document.getElementById('radiusVal');
+
+sliderEl.addEventListener('input', () => {
+  radius = parseInt(sliderEl.value);
+  radiusValEl.textContent = `${radius} km`;
+  syncSliderTrack();
+  if (curLat !== null) {
+    updateRadiusCircle(curLat, curLon);
+    if (rawStations.length) renderAll(rawStations);
+  }
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+
+initMap();
+syncSliderTrack();
+</script>
+</body>
+</html>

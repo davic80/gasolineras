@@ -1,0 +1,24 @@
+{
+  "name": "Gasolineras España",
+  "short_name": "Gasolineras",
+  "description": "Precios de combustible en tiempo real cerca de ti",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f2f2f7",
+  "theme_color": "#007aff",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "maskable"
+    }
+  ]
+}
